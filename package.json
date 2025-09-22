@@ -1,0 +1,31 @@
+{
+  "name": "excel-reader",
+  "version": "1.0.0",
+  "description": "A TypeScript library for reading Excel files with embedded images and converting them to base64",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "test": "node example/simple-example.js",
+    "example": "npm run build && node example/simple-example.js"
+  },
+  "keywords": [
+    "excel",
+    "xlsx",
+    "image",
+    "base64",
+    "typescript",
+    "sheetjs"
+  ],
+  "author": "Qdd",
+  "license": "MIT",
+  "dependencies": {
+    "xlsx": "^0.18.5",
+    "jszip": "^3.10.1"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "typescript": "^5.0.0"
+  }
+}
