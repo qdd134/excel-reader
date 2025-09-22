@@ -4,7 +4,7 @@
     "module": "commonjs",
     "lib": ["ES2020", "DOM"],
     "outDir": "./dist",
-    "rootDir": "./",
+    "rootDir": "./src",
     "strict": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
@@ -17,6 +17,6 @@
     "resolveJsonModule": true,
     "types": ["node", "xlsx", "jszip"]
   },
-  "include": ["src/**/*", "example/**/*"],
+  "include": ["src/**/*"],
   "exclude": ["node_modules", "dist"]
 }
