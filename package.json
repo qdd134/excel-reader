@@ -1,6 +1,6 @@
 {
   "name": "excel-reader",
-  "version": "1.2.0",
+  "version": "1.2.2",
   "description": "A TypeScript library for reading Excel files with embedded images and converting them to base64",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
