@@ -1,4 +1,5 @@
-const { ExcelImageReader } = require('../dist/src/index');
+require('dotenv').config({ path: require('path').resolve(__dirname, '.env') });
+const { ExcelImageReader } = require('../dist/index');
 const fs = require('fs');
 const path = require('path');
 
@@ -9,7 +10,9 @@ async function main() {
   const reader = new ExcelImageReader();
   
   // 示例文件路径（请替换为实际的Excel文件路径）
-  const excelFilePath = path.join(__dirname, 'test.xlsx');
+  const envPath = process.env.EXCEL_READER_XLSX || process.env.EXCEL_XLSX || process.env.XLSX_PATH;
+  const defaultPath = path.join(__dirname, 'test.xlsx');
+  const excelFilePath = (envPath && fs.existsSync(envPath)) ? envPath : defaultPath;
   
   try {
     console.log('开始解析Excel文件...');
@@ -89,7 +92,8 @@ async function main() {
  */
 async function saveImageToFile(image, worksheetName, cellRef) {
   try {
-    const outputDir = path.join(__dirname, 'output');
+    const outputBase = process.env.EXCEL_READER_OUTPUT || process.env.EXCEL_OUTPUT || process.env.OUTPUT_DIR || path.join(__dirname, 'output');
+    const outputDir = outputBase;
     if (!fs.existsSync(outputDir)) {
       fs.mkdirSync(outputDir, { recursive: true });
     }

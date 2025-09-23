@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <title>Excel 预览</title>
+  <style>
+    body{font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Arial;margin:16px}
+    .file{border:1px solid #e5e7eb;border-radius:8px;margin:12px 0}
+    .file-header{background:#f1f5f9;padding:10px 12px;cursor:pointer;display:flex;justify-content:space-between;align-items:center}
+    .sheet{border-top:1px solid #e5e7eb}
+    .sheet-header{background:#f8fafc;padding:8px 12px;cursor:pointer}
+    table{border-collapse:collapse;width:100%}
+    th,td{border:1px solid #e5e7eb;padding:6px;vertical-align:top}
+    .meta{color:#475569;font-size:12px}
+    .btn{padding:6px 10px;border:1px solid #cbd5e1;border-radius:6px;background:#fff;cursor:pointer}
+    .image-cell img{max-width:120px;max-height:120px;display:block}
+    .badge{display:inline-block;background:#eff6ff;color:#1d4ed8;padding:2px 6px;border-radius:9999px;font-size:12px;margin-left:6px}
+  </style>
+</head>
+<body>
+  <h1>Excel 多文件预览</h1>
+  <div id="app"></div>
+  <script>
+    const FILES = /*__FILES__*/[];
+    const CHUNK = 200; // 每次渲染的行数
+
+    function el(tag, props={}, ...children){const e=document.createElement(tag);Object.assign(e,props);children.forEach(c=>e.append(c));return e}
+
+    function escapeHtml(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\"/g,'&quot;').replace(/'/g,'&#039;')}
+
+    async function loadJson(name){
+      const res = await fetch(name);
+      if(!res.ok) throw new Error('load fail '+name);
+      return await res.json();
+    }
+
+    function renderSheet(container, data, images){
+      const header = el('div', { className:'sheet-header', onclick:()=>toggle() }, data.name + '  范围 ' + data.dimension.start + '~' + data.dimension.end + '  图片' + data.totalImages);
+      const body = el('div', { style:'display:none' });
+      container.append(header, body);
+
+      const maxCols = Math.max(0, ...data.rows.map(r => (r.cells||[]).length));
+      const table = el('table');
+      const thead = el('thead');
+      const headRow = el('tr');
+      headRow.append(el('th',{}, '#'));
+      for(let c=0;c<maxCols;c++){ headRow.append(el('th',{}, '列'+(c+1))); }
+      headRow.append(el('th',{}, '浮动图')); // 追加浮动图列
+      thead.append(headRow);
+      const tbody = el('tbody');
+      table.append(thead, tbody);
+      body.append(table);
+
+      let idx=0;
+      function renderMore(){
+        const end=Math.min(idx+CHUNK,data.rows.length);
+      for(let r=idx;r<end;r++){
+          const row = data.rows[r];
+          const tr = el('tr');
+          const rn = el('td',{});
+          rn.innerHTML = escapeHtml(row.rowNumber) + (row.imageCount>0? ' <span class="badge">📷×'+row.imageCount+'</span>':'');
+          tr.append(rn);
+          for(let c=0;c<maxCols;c++){
+            const cell = (row.cells||[])[c];
+            const td = el('td',{});
+            if(!cell){ td.textContent=''; tr.append(td); continue; }
+            if(cell.image){
+              const imgMeta = images[cell.image.id];
+              if(imgMeta){ const i = el('img',{loading:'lazy'}); i.src=imgMeta.url||imgMeta.base64; i.alt=imgMeta.description||''; td.className='image-cell'; td.append(i); }
+              else { td.textContent='[IMG]'; }
+            } else {
+              td.innerHTML = escapeHtml((cell.type==='formula' && cell.formula)? '='+cell.formula : (cell.value??''));
+            }
+            tr.append(td);
+          }
+          // 浮动图列
+          const ftd = el('td',{});
+          const ids = row.floatingImageIds||[];
+          for(const id of ids){ const meta=images[id]; if(!meta) continue; const im=el('img',{loading:'lazy'}); im.src=meta.url||meta.base64; im.alt=meta.description||''; ftd.className='image-cell'; ftd.append(im); }
+          tr.append(ftd);
+          tbody.append(tr);
+        }
+        idx=end;
+        moreBtn.style.display = (idx < data.rows.length) ? 'inline-block' : 'none';
+      }
+      function toggle(){ body.style.display = (body.style.display==='none')?'block':'none' }
+      const moreBtn = el('button',{className:'btn',onclick:renderMore}, '加载更多');
+      body.append(moreBtn);
+    }
+
+    async function mount(){
+      const app=document.getElementById('app');
+      for(const f of FILES){
+        const wrap = el('div',{className:'file'});
+        const head = el('div',{className:'file-header'}, f);
+        const body = el('div',{style:'display:none'});
+        head.onclick = async ()=>{
+          body.style.display = (body.style.display==='none')?'block':'none';
+          if(body.dataset.loaded) return;
+          const j = await loadJson(f);
+          const images = j.images || {};
+          (j.worksheets||[]).forEach(ws=>renderSheet(body, ws, images));
+          body.dataset.loaded = '1';
+        };
+        wrap.append(head, body);
+        app.append(wrap);
+      }
+    }
+    mount();
+  </script>
+</body>
+</html>
+
+
+

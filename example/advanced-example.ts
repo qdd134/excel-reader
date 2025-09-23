@@ -1,5 +1,7 @@
 // @ts-nocheck
 import { ExcelImageReader, ExcelParseResult, CellData, WorksheetData } from '../src/index';
+import dotenv from 'dotenv';
+dotenv.config({ path: require('path').resolve(__dirname, '.env') });
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -29,7 +31,8 @@ class AdvancedExcelProcessor {
     const report = this.generateReport(result);
     
     // 保存报告到文件
-    const reportPath = path.join(__dirname, 'output', 'excel_report.json');
+    const outputBase = process.env.EXCEL_READER_OUTPUT || process.env.EXCEL_OUTPUT || process.env.OUTPUT_DIR || path.join(__dirname, 'output');
+    const reportPath = path.join(outputBase, 'excel_report.json');
     fs.writeFileSync(reportPath, JSON.stringify(report, null, 2));
     console.log(`报告已保存到: ${reportPath}`);
 
@@ -116,7 +119,8 @@ class AdvancedExcelProcessor {
    * 提取所有图片
    */
   private async extractAllImages(result: ExcelParseResult): Promise<void> {
-    const outputDir = path.join(__dirname, 'output', 'images');
+    const outputBase = process.env.EXCEL_READER_OUTPUT || process.env.EXCEL_OUTPUT || process.env.OUTPUT_DIR || path.join(__dirname, 'output');
+    const outputDir = path.join(outputBase, 'images');
     if (!fs.existsSync(outputDir)) {
       fs.mkdirSync(outputDir, { recursive: true });
     }
@@ -142,7 +146,7 @@ class AdvancedExcelProcessor {
    * 生成CSV文件
    */
   private async generateCSV(result: ExcelParseResult): Promise<void> {
-    const outputDir = path.join(__dirname, 'output');
+    const outputDir = process.env.EXCEL_READER_OUTPUT || process.env.EXCEL_OUTPUT || process.env.OUTPUT_DIR || path.join(__dirname, 'output');
     if (!fs.existsSync(outputDir)) {
       fs.mkdirSync(outputDir, { recursive: true });
     }
@@ -185,7 +189,7 @@ class AdvancedExcelProcessor {
    * 生成HTML预览
    */
   private async generateHTMLPreview(result: ExcelParseResult): Promise<void> {
-    const outputDir = path.join(__dirname, 'output');
+    const outputDir = process.env.EXCEL_READER_OUTPUT || process.env.EXCEL_OUTPUT || process.env.OUTPUT_DIR || path.join(__dirname, 'output');
     if (!fs.existsSync(outputDir)) {
       fs.mkdirSync(outputDir, { recursive: true });
     }
@@ -298,8 +302,10 @@ class AdvancedExcelProcessor {
 async function runAdvancedExample() {
   const processor = new AdvancedExcelProcessor();
   
-  // 请替换为实际的Excel文件路径
-  const excelFilePath = path.join(__dirname, '../test.xlsx');
+  // 优先从环境变量读取路径
+  const envPath = process.env.EXCEL_READER_XLSX || process.env.EXCEL_XLSX || process.env.XLSX_PATH;
+  const defaultPath = path.join(__dirname, '../test.xlsx');
+  const excelFilePath = (envPath && fs.existsSync(envPath)) ? envPath : defaultPath;
   
   if (fs.existsSync(excelFilePath)) {
     await processor.processExcelFile(excelFilePath);

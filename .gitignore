@@ -128,4 +128,12 @@ ehthumbs.db
 Thumbs.db
 
 # Example output files
-example/output/
+# 测试结果
+example/output/ 
+# 测试表格
+example/xlsx_files/ 
+#压测脚本，生成不同版本的excel文件
+example/scripts/ 
+
+#local special dictionary
+extract_xlsxs/

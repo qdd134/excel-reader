@@ -15,7 +15,7 @@
     "moduleResolution": "node",
     "allowSyntheticDefaultImports": true,
     "resolveJsonModule": true,
-    "types": ["node", "xlsx", "jszip"]
+    "types": ["node", "xlsx", "jszip", "fast-xml-parser"]
   },
   "include": ["src/**/*"],
   "exclude": ["node_modules", "dist"]

@@ -11,6 +11,10 @@ import {
   ParseOptions, 
   ImageExtractionResult 
 } from './types';
+import { XMLParser } from 'fast-xml-parser';
+import { FloatingImageManager } from './FloatingImageManager';
+import { RelationshipParser } from './RelationshipParser';
+import { ImageExtractor } from './ImageExtractor';
 
 /**
  * Excel图片读取器
@@ -20,6 +24,15 @@ export class ExcelImageReader {
   private zip: JSZip | null = null;
   private cellImagesXml: string | null = null;
   private cellImagesRels: string | null = null;
+  private floatingImageManager: FloatingImageManager;
+  private relationshipParser: RelationshipParser;
+  private imageExtractor: ImageExtractor;
+
+  constructor() {
+    this.floatingImageManager = new FloatingImageManager();
+    this.relationshipParser = new RelationshipParser();
+    this.imageExtractor = new ImageExtractor();
+  }
 
   /**
    * 解析Excel文件
@@ -28,6 +41,11 @@ export class ExcelImageReader {
    * @returns 解析结果
    */
   async parseFile(filePath: string, options: ParseOptions = {}): Promise<ExcelParseResult> {
+    // 重置跨文件状态
+    this.zip = null;
+    this.cellImagesXml = null;
+    this.cellImagesRels = null;
+    if (this.floatingImageManager) this.floatingImageManager.clear();
     const defaultOptions: ParseOptions = {
       includeImages: true,
       imageQuality: 0.8,
@@ -72,6 +90,11 @@ export class ExcelImageReader {
    * @returns 解析结果
    */
   async parseBuffer(buffer: any, options: ParseOptions = {}): Promise<ExcelParseResult> {
+    // 重置跨文件状态
+    this.zip = null;
+    this.cellImagesXml = null;
+    this.cellImagesRels = null;
+    if (this.floatingImageManager) this.floatingImageManager.clear();
     const defaultOptions: ParseOptions = {
       includeImages: true,
       imageQuality: 0.8,
@@ -130,6 +153,12 @@ export class ExcelImageReader {
     try {
       this.zip = await JSZip.loadAsync(buffer, { checkCRC32: false }) as any;
       
+      // 设置组件依赖
+      if (this.zip) {
+        this.floatingImageManager.setZip(this.zip);
+        this.imageExtractor.setZip(this.zip);
+      }
+      
       // 读取cellimages.xml文件
       const cellImagesFile = this.zip?.file('xl/cellimages.xml');
       if (cellImagesFile) {
@@ -147,6 +176,8 @@ export class ExcelImageReader {
         await this.parseCellImages(result);
       }
 
+      // 解析浮动图片
+      await this.floatingImageManager.parseFloatingImages(result);
     } catch (error) {
       result.errors.push(`提取图片失败: ${error instanceof Error ? error.message : String(error)}`);
     }
@@ -162,25 +193,25 @@ export class ExcelImageReader {
 
     try {
       // 解析关系映射
-      const relationshipMap = this.parseRelationships(this.cellImagesRels);
+      const relationshipMap = this.relationshipParser.parseRelationships(this.cellImagesRels);
       
       // 解析图片信息
       const cellImages = this.parseCellImagesXml(this.cellImagesXml);
       
+      // console.log("relationshipMap:",relationshipMap,"cellImages:", cellImages);
       // 提取每个图片的base64数据
       for (const cellImage of cellImages) {
         const relationship = relationshipMap.get(cellImage.relationshipId);
         if (relationship) {
-          const imageResult = await this.extractImageData(relationship.target);
+          const imageResult = await this.imageExtractor.extractImageData(relationship.target);
           if (imageResult) {
-            const cellImageData: CellImage = {
-              id: cellImage.id,
-              description: cellImage.description,
-              base64: imageResult.base64,
-              mimeType: imageResult.mimeType,
-              position: cellImage.position,
-              relationshipId: cellImage.relationshipId
-            };
+            const cellImageData = this.imageExtractor.createCellImage(
+              cellImage.id,
+              cellImage.description,
+              cellImage.relationshipId,
+              cellImage.position,
+              imageResult
+            );
             result.images.set(cellImage.id, cellImageData);
           }
         }
@@ -191,25 +222,6 @@ export class ExcelImageReader {
     }
   }
 
-  /**
-   * 解析关系文件
-   */
-  private parseRelationships(relsXml: string): Map<string, { id: string; type: string; target: string }> {
-    const relationships = new Map<string, { id: string; type: string; target: string }>();
-    
-    const relationshipRegex = /<Relationship\s+Id="([^"]+)"\s+Type="([^"]+)"\s+Target="([^"]+)"\s*\/?>/g;
-    let match;
-    
-    while ((match = relationshipRegex.exec(relsXml)) !== null) {
-      relationships.set(match[1], {
-        id: match[1],
-        type: match[2],
-        target: match[3]
-      });
-    }
-    
-    return relationships;
-  }
 
   /**
    * 解析cellimages.xml文件
@@ -220,94 +232,50 @@ export class ExcelImageReader {
     position: { x: number; y: number; width: number; height: number };
     relationshipId: string;
   }> {
-    const cellImages: Array<{
-      id: string;
-      description: string;
-      position: { x: number; y: number; width: number; height: number };
-      relationshipId: string;
-    }> = [];
+    const cellImages: Array<{ id: string; description: string; position: { x: number; y: number; width: number; height: number }; relationshipId: string; }> = [];
+    const parser = new XMLParser({ ignoreAttributes: false, attributeNamePrefix: '' });
+    try {
+      const doc = parser.parse(xml);
+      const root = (doc['etc:cellImages'] || doc['cellImages'] || doc);
+      const itemsRaw = root?.['etc:cellImage'] || root?.['cellImage'] || [];
+      const items = Array.isArray(itemsRaw) ? itemsRaw : [itemsRaw];
+      for (const item of items) {
+        if (!item) continue;
+        const pic = item['xdr:pic'] || item['pic'] || item.pic;
+        if (!pic) continue;
+        const nvPicPr = pic['xdr:nvPicPr'] || pic['nvPicPr'];
+        const cNvPr = nvPicPr?.['xdr:cNvPr'] || nvPicPr?.['cNvPr'] || nvPicPr?.cNvPr;
+        const blipFill = pic['xdr:blipFill'] || pic['blipFill'];
+        const aBlip = blipFill?.['a:blip'] || blipFill?.blip;
+        const spPr = pic['xdr:spPr'] || pic['spPr'];
+        const xfrm = spPr?.['a:xfrm'] || spPr?.xfrm;
+        const off = xfrm?.['a:off'] || xfrm?.off;
+        const ext = xfrm?.['a:ext'] || xfrm?.ext;
 
-    // 匹配每个cellImage块
-    const cellImageRegex = /<etc:cellImage>([\s\S]*?)<\/etc:cellImage>/g;
-    let cellImageMatch;
+        const id = cNvPr?.name;
+        const description = cNvPr?.descr ?? '';
+        const relationshipId = aBlip?.['r:embed'] || aBlip?.embed;
+        const x = Number(off?.x ?? 0);
+        const y = Number(off?.y ?? 0);
+        const width = Number(ext?.cx ?? 0);
+        const height = Number(ext?.cy ?? 0);
 
-    while ((cellImageMatch = cellImageRegex.exec(xml)) !== null) {
-      const cellImageXml = cellImageMatch[1];
-      
-      // 提取ID和描述
-      const idMatch = cellImageXml.match(/name="([^"]+)"/);
-      const descMatch = cellImageXml.match(/descr="([^"]+)"/);
-      const embedMatch = cellImageXml.match(/r:embed="([^"]+)"/);
-      
-      // 提取位置信息
-      const offMatch = cellImageXml.match(/<a:off\s+x="([^"]+)"\s+y="([^"]+)"\s*\/?>/);
-      const extMatch = cellImageXml.match(/<a:ext\s+cx="([^"]+)"\s+cy="([^"]+)"\s*\/?>/);
-
-      if (idMatch && descMatch && embedMatch && offMatch && extMatch) {
-        cellImages.push({
-          id: idMatch[1],
-          description: descMatch[1],
-          position: {
-            x: parseInt(offMatch[1]),
-            y: parseInt(offMatch[2]),
-            width: parseInt(extMatch[1]),
-            height: parseInt(extMatch[2])
-          },
-          relationshipId: embedMatch[1]
-        });
+        if (id && relationshipId && Number.isFinite(x) && Number.isFinite(y) && Number.isFinite(width) && Number.isFinite(height)) {
+          cellImages.push({
+            id,
+            description,
+            position: { x, y, width, height },
+            relationshipId
+          });
+        }
       }
+    } catch {
+      // ignore
     }
-
     return cellImages;
   }
 
-  /**
-   * 提取图片数据
-   */
-  private async extractImageData(imagePath: string): Promise<ImageExtractionResult | null> {
-    if (!this.zip) return null;
 
-    try {
-      const imageFile = this.zip.file(`xl/${imagePath}`);
-      if (!imageFile) return null;
-
-      const imageBuffer = await imageFile.async('nodebuffer');
-      const mimeType = this.getMimeTypeFromPath(imagePath);
-      const base64 = imageBuffer.toString('base64');
-
-      return {
-        id: '',
-        description: '',
-        base64: `data:${mimeType};base64,${base64}`,
-        mimeType,
-        rawData: new Uint8Array(imageBuffer)
-      };
-    } catch (error) {
-      return null;
-    }
-  }
-
-  /**
-   * 根据文件路径获取MIME类型
-   */
-  private getMimeTypeFromPath(path: string): string {
-    const extension = path.toLowerCase().split('.').pop();
-    switch (extension) {
-      case 'jpg':
-      case 'jpeg':
-        return 'image/jpeg';
-      case 'png':
-        return 'image/png';
-      case 'gif':
-        return 'image/gif';
-      case 'bmp':
-        return 'image/bmp';
-      case 'webp':
-        return 'image/webp';
-      default:
-        return 'image/jpeg';
-    }
-  }
 
   /**
    * 解析工作表数据
@@ -327,9 +295,26 @@ export class ExcelImageReader {
     // 统计变量
     let totalImages = 0;
     let rowsWithImages = 0;
+    const floatingForSheet = this.floatingImageManager.getSheetFloatingImages(sheetName);
+
+    // 扩展数据范围以包含浮动图片所在的单元格（避免因插入表头导致图片行超出 !ref 而被忽略）
+    let startRow = range.s.r;
+    let startCol = range.s.c;
+    let endRow = range.e.r;
+    let endCol = range.e.c;
+    for (const cellRef of Array.from(floatingForSheet.keys())) {
+      const coord = XLSX.utils.decode_cell(cellRef);
+      if (Number.isFinite(coord.r) && Number.isFinite(coord.c)) {
+        if (coord.r > endRow) endRow = coord.r;
+        if (coord.c > endCol) endCol = coord.c;
+        if (coord.r < startRow) startRow = coord.r;
+        if (coord.c < startCol) startCol = coord.c;
+      }
+    }
     
     // 解析行数据
-    for (let rowNum = range.s.r; rowNum <= range.e.r; rowNum++) {
+    for (let rowNum = startRow; rowNum <= endRow; rowNum++) {
+      const rowSeen = new Set<string>();
       const rowData: RowData = {
         rowNumber: rowNum + 1,
         cells: [],
@@ -347,14 +332,33 @@ export class ExcelImageReader {
       }
 
       // 解析单元格
-      for (let colNum = range.s.c; colNum <= range.e.c; colNum++) {
+      for (let colNum = startCol; colNum <= endCol; colNum++) {
         const cellRef = XLSX.utils.encode_cell({ r: rowNum, c: colNum });
         const cell = worksheet[cellRef];
-        
+
+        // 先处理浮动图计数（即使该列没有实际单元格也要统计）
+        const floatingIds = floatingForSheet.get(cellRef);
+        if (floatingIds && floatingIds.length) {
+          // de-dup per row / global by image id
+          for (const fid of floatingIds) {
+            if (!rowSeen.has(fid)) {
+              rowSeen.add(fid);
+              rowData.imageCount += 1;
+              totalImages += 1;
+              rowData.imageCells.push(cellRef);
+            }
+          }
+        }
+
         if (cell || options.includeEmptyColumns) {
           const cellData = this.parseCell(cell, cellRef, images);
+          // 若该单元格还没有 image 字段，则选择第一个作为该单元格代表图片
+          if (!cellData.image && floatingIds && floatingIds.length) {
+            const img = images.get(floatingIds[0]);
+            if (img) cellData.image = img;
+          }
           rowData.cells.push(cellData);
-          
+
           // 检查是否为图片单元格
           if (this.isImageCell(cell)) {
             const imageId = this.extractImageIdFromCell(cell);
@@ -435,8 +439,8 @@ export class ExcelImageReader {
       return cellData;
     }
 
-    // 设置基本属性
-    cellData.value = String(cell.v || '');
+    // 设置基本属性（保留数字 0，不被当成空）
+    cellData.value = String(cell.v ?? '');
     cellData.styleId = cell.s;
     
     // 判断单元格类型

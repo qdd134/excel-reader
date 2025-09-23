@@ -34,11 +34,13 @@
   "author": "Qdd",
   "license": "MIT",
   "dependencies": {
-    "xlsx": "^0.18.5",
-    "jszip": "^3.10.1"
+    "fast-xml-parser": "^4.3.6",
+    "jszip": "^3.10.1",
+    "xlsx": "^0.18.5"
   },
   "devDependencies": {
     "@types/node": "^20.0.0",
+    "dotenv": "^17.2.2",
     "typescript": "^5.0.0"
   }
 }

@@ -55,6 +55,10 @@ export interface RowData {
   imageCount: number;
   /** 该行包含图片的单元格引用 */
   imageCells: string[];
+  /** 该行绑定的浮动图片ID列表（无固定单元格，锚定到行） */
+  floatingImageIds?: string[];
+  /** 该行绑定的浮动图片信息 */
+  floatingImages?: CellImage[];
 }
 
 /**

@@ -1,5 +1,7 @@
 // @ts-nocheck
 import { ExcelImageReader, ExcelParseResult, RowData, CellData } from '../src/index';
+import dotenv from 'dotenv';
+dotenv.config({ path: require('path').resolve(__dirname, '.env') });
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -210,7 +212,8 @@ class MultiImageProcessor {
    */
   async extractMultiImageRows(filePath: string): Promise<void> {
     const result = await this.reader.parseFile(filePath, { includeImages: true });
-    const outputDir = path.join(__dirname, 'output', 'multi_image_rows');
+    const outputBase = process.env.EXCEL_READER_OUTPUT || process.env.EXCEL_OUTPUT || process.env.OUTPUT_DIR || path.join(__dirname, 'output');
+    const outputDir = path.join(outputBase, 'multi_image_rows');
     
     if (!fs.existsSync(outputDir)) {
       fs.mkdirSync(outputDir, { recursive: true });
@@ -270,8 +273,10 @@ class MultiImageProcessor {
 async function runMultiImageExample() {
   const processor = new MultiImageProcessor();
   
-  // 请替换为实际的Excel文件路径
-  const excelFilePath = '/Users/qianduoduo/Downloads/testexcel/excel-reader/example/test.xlsx';
+  // 优先从环境变量读取路径
+  const envPath = process.env.EXCEL_READER_XLSX || process.env.EXCEL_XLSX || process.env.XLSX_PATH;
+  const defaultPath = path.join(__dirname, '../test.xlsx');
+  const excelFilePath = (envPath && fs.existsSync(envPath)) ? envPath : defaultPath;
   
   if (fs.existsSync(excelFilePath)) {
     await processor.processMultiImageExcel(excelFilePath);
